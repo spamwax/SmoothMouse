@@ -1,7 +1,10 @@
 #import <IOKit/IODataQueueClient.h>
 #import <IOKit/kext/KextManager.h>
 #import <mach/mach.h>
+#include <mach/mach_init.h>
+#include <mach/thread_policy.h>
 #include <pthread.h>
+#include <sys/sysctl.h>
 
 #import "kextdaemon.h"
 #import "constants.h"
@@ -97,6 +100,8 @@ pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 		NSLog(@"cannot open file %@", file);
         return NO;
 	}
+
+    NSLog(@"found %@", file);
 
     NSNumber *value;
 
@@ -301,11 +306,73 @@ error:
 	[super release];
 }
 
+int set_realtime() {
+    struct thread_time_constraint_policy ttcpolicy;
+    int params [2] = {CTL_HW, HW_BUS_FREQ};
+    int hzms;
+    size_t sz;
+    int ret;
+
+    /* get hz */
+    sz = sizeof (hzms);
+    sysctl (params, 2, &hzms, &sz, NULL, 0);
+
+    NSLog(@"hz: %d", hzms);
+
+    /* make hzms actually hz per ms */
+    hzms /= 1000;
+
+    NSLog(@"hz: %d", hzms);
+
+    /*
+     * THREAD_TIME_CONSTRAINT_POLICY:
+     *
+     * This scheduling mode is for threads which have real time
+     * constraints on their execution.
+     *
+     * Parameters:
+     *
+     * period: This is the nominal amount of time between separate
+     * processing arrivals, specified in absolute time units.  A
+     * value of 0 indicates that there is no inherent periodicity in
+     * the computation.
+     *
+     * computation: This is the nominal amount of computation
+     * time needed during a separate processing arrival, specified
+     * in absolute time units.
+     *
+     * constraint: This is the maximum amount of real time that
+     * may elapse from the start of a separate processing arrival
+     * to the end of computation for logically correct functioning,
+     * specified in absolute time units.  Must be (>= computation).
+     * Note that latency = (constraint - computation).
+     *
+     * preemptible: This indicates that the computation may be
+     * interrupted, subject to the constraint specified above.
+     */
+
+    // most common mouse hz is 127, meaning period is 7.874 ms
+    ttcpolicy.period = 7.874 * hzms;
+    ttcpolicy.computation = 1 * hzms;
+    ttcpolicy.constraint = 2 * hzms;
+    ttcpolicy.preemptible = 0;
+
+    ret = thread_policy_set(mach_thread_self(),
+                            THREAD_TIME_CONSTRAINT_POLICY, (int *)&ttcpolicy,
+                            THREAD_TIME_CONSTRAINT_POLICY_COUNT);
+
+    if (ret != KERN_SUCCESS) {
+        NSLog(@"call to thread_policy_set failed: %d", ret);
+    }
+
+    NSLog(@"Time constraint policy set");
+
+    return 0;
+}
+
 void *HandleMouseEventThread(void *instance)
 {
     SmoothMouseDaemon *self = (SmoothMouseDaemon *) instance;
-
-    static const int MOUSE_THREAD_PRIORITY = 96; // real-time
 
     kern_return_t error;
 
@@ -315,12 +382,7 @@ void *HandleMouseEventThread(void *instance)
 		return NULL;
 	}
 
-    struct sched_param sp;
-    memset(&sp, 0, sizeof(struct sched_param));
-    sp.sched_priority = MOUSE_THREAD_PRIORITY;
-    if (pthread_setschedparam(pthread_self(), SCHED_RR, &sp)  == -1) {
-        NSLog(@"call to pthread_setschedparam failed");
-    }
+    set_realtime();
 
     (void) mouse_init();
 
@@ -348,15 +410,6 @@ void *HandleMouseEventThread(void *instance)
                         default:
                             velocity = 1;
                             NSLog(@"INTERNAL ERROR: device type not mouse or trackpad");
-                    }
-                    struct sched_param sp;
-                    int policy;
-                    if (pthread_getschedparam(pthread_self(), &policy, &sp)  == -1) {
-                        NSLog(@"call to pthread_getschedparam failed");
-                    }
-                    if (is_debug && sp.sched_priority != MOUSE_THREAD_PRIORITY) {
-                        NSLog(@"mouse thread priority has changed (should be %d, is %d)",
-                              MOUSE_THREAD_PRIORITY, sp.sched_priority);
                     }
                     mouse_handle(mouse_event, velocity, curve);
                 } else {
