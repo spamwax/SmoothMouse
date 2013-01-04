@@ -143,8 +143,9 @@ void mouse_cleanup() {
 }
 
 void mouse_handle(mouse_event_t *event, double velocity, AccelerationCurve curve) {
+    static CGPoint pos0 = get_current_mouse_pos();
     CGPoint newPos;
-    CGPoint currentPos = get_current_mouse_pos();
+    CGPoint currentPos = pos0;
 
     float calcdx;
     float calcdy;
@@ -175,7 +176,7 @@ void mouse_handle(mouse_event_t *event, double velocity, AccelerationCurve curve
     newPos.x = currentPos.x + calcdx;
     newPos.y = currentPos.y + calcdy;
 
-    newPos = restrict_to_screen_boundaries(currentPos, newPos);
+    //newPos = restrict_to_screen_boundaries(currentPos, newPos);
 
 	if (is_event) {
         CGEventType mouseType = kCGEventMouseMoved;
@@ -260,7 +261,7 @@ void mouse_handle(mouse_event_t *event, double velocity, AccelerationCurve curve
         deltaPosInt.x += deltaX;
         deltaPosInt.y += deltaY;
 
-        if (is_debug) {
+        if (is_debug && 0) {
             NSLog(@"dx: %d, dy: %d, buttons(LMR456): %d%d%d%d%d%d, mouseType: %s(%d), otherButton: %d, changedIndex: %d, nclicks: %d, csv: %d, cur: %.2fx%.2f, delta: %.2fx%.2f",
                   event->dx,
                   event->dy,
@@ -290,6 +291,7 @@ void mouse_handle(mouse_event_t *event, double velocity, AccelerationCurve curve
         CGEventPost(kCGSessionEventTap, evt);
         CFRelease(evt);
 
+        pos0 = newPos;
     } else {
         /* post event */
         if (kCGErrorSuccess != CGPostMouseEvent(newPos, true, 1, BUTTON_DOWN(LEFT_BUTTON))) {

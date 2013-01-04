@@ -314,7 +314,7 @@ BOOL set_high_prio_pthread() {
 
     memset(&sp, 0, sizeof(struct sched_param));
 
-    sp.sched_priority = sched_get_priority_max(SCHED_RR);
+    sp.sched_priority = 0;//sched_get_priority_min(SCHED_RR);
 
     if (pthread_setschedparam(pthread_self(), SCHED_RR, &sp)  == -1) {
         NSLog(@"call to pthread_setschedparam failed");
@@ -377,11 +377,13 @@ BOOL set_realtime_prio() {
 
 #define MS_TO_NANOS(ms) ((ms) * 1000000)
 
+    float XXX = 1;
+    float YYY = 2;
     // most common mouse hz is 127, meaning period is 7.874 ms
     struct thread_time_constraint_policy ttcpolicy;
-    ttcpolicy.period        = convert_from_nanos_to_mach_timebase(MS_TO_NANOS(7.874), &info);
-    ttcpolicy.computation   = convert_from_nanos_to_mach_timebase(MS_TO_NANOS(1    ), &info);
-    ttcpolicy.constraint    = convert_from_nanos_to_mach_timebase(MS_TO_NANOS(2    ), &info);
+    ttcpolicy.period        = convert_from_nanos_to_mach_timebase(MS_TO_NANOS(7.874/16), &info);
+    ttcpolicy.computation   = convert_from_nanos_to_mach_timebase(MS_TO_NANOS(XXX    ), &info);
+    ttcpolicy.constraint    = convert_from_nanos_to_mach_timebase(MS_TO_NANOS(YYY    ), &info);
     ttcpolicy.preemptible   = 0;
 
     NSLog(@"period: %u, computation: %u, constraint: %u (all in mach timebase), preemtible; %u",
@@ -421,15 +423,16 @@ void *HandleMouseEventThread(void *instance)
     set_realtime_prio();
 
     (void) mouse_init();
-
+    UInt64 start, end;
     while (IODataQueueWaitForAvailableData(self->queueMappedMemory, self->recvPort) == kIOReturnSuccess) {
 
-        pthread_mutex_lock(&mutex);
+        //pthread_mutex_lock(&mutex);
 
         if (self->connected) {
 
             while (IODataQueueDataAvailable(self->queueMappedMemory)) {
                 error = IODataQueueDequeue(self->queueMappedMemory, buf, &(self->dataSize));
+                //start = mach_absolute_time();
                 if (!error) {
                     mouse_event_t *mouse_event = (mouse_event_t *) buf;
                     double velocity;
@@ -451,10 +454,12 @@ void *HandleMouseEventThread(void *instance)
                 } else {
                     NSLog(@"IODataQueueDequeue() failed");
                 }
+                //end = mach_absolute_time();
+                //UInt64 diff = end - start;
             }
         }
 
-        pthread_mutex_unlock(&mutex);
+        //pthread_mutex_unlock(&mutex);
     }
 
 	free(buf);
