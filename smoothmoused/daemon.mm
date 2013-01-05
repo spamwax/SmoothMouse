@@ -3,7 +3,6 @@
 #import <mach/mach.h>
 #include <mach/mach_init.h>
 #include <mach/thread_policy.h>
-#include <mach/mach_time.h>
 #include <pthread.h>
 #include <sched.h>
 #include <sys/sysctl.h>
@@ -14,15 +13,20 @@
 #import "mouse.h"
 #import "accel.h"
 
-BOOL is_debug;
+BOOL is_debug = 0;
+BOOL is_perf = 0;
+BOOL is_dumping = 0;
 BOOL is_event = 0;
 
 static BOOL mouse_enabled;
 static BOOL trackpad_enabled;
-static double velocity_mouse;
-static double velocity_trackpad;
-static AccelerationCurve curve_mouse;
-static AccelerationCurve curve_trackpad;
+double velocity_mouse;
+double velocity_trackpad;
+AccelerationCurve curve_mouse;
+AccelerationCurve curve_trackpad;
+
+double start, end, t1, t2, t3, t4, mhs, mhe, outerstart, outerend, outersum = 0, outernum = 0;
+NSMutableArray* logs = [[NSMutableArray alloc] init];
 
 @interface SmoothMouseDaemon : NSObject {
 @private
@@ -296,7 +300,6 @@ error:
 	[super release];
 }
 
-
 BOOL set_high_prio_pthread() {
     struct sched_param sp;
 
@@ -342,7 +345,7 @@ BOOL set_realtime_prio() {
 
     struct thread_time_constraint_policy ttcpolicy;
     // most common mouse hz is 127, meaning period is 7.874 ms
-    ttcpolicy.period        = convert_from_nanos_to_mach_timebase(MS_TO_NANOS(7.874), &info);
+    ttcpolicy.period        = convert_from_nanos_to_mach_timebase(MS_TO_NANOS(7.874/16), &info);
     ttcpolicy.computation   = 8000000 ; // measured
     ttcpolicy.constraint    = 16000000;
     ttcpolicy.preemptible   = 0;
@@ -386,31 +389,34 @@ void *HandleMouseEventThread(void *instance)
 
     (void) mouse_init();
 
+    static int counter = 0;
     while (IODataQueueWaitForAvailableData(self->queueMappedMemory, self->recvPort) == kIOReturnSuccess) {
+        outerend = GET_TIME();
+        int numPackets = 0;
         while (IODataQueueDataAvailable(self->queueMappedMemory)) {
+            numPackets++;
+            counter++;
+            start = GET_TIME();
             error = IODataQueueDequeue(self->queueMappedMemory, buf, &(self->dataSize));
+            mouse_event_t *mouse_event = (mouse_event_t *) buf;
             if (!error) {
-                mouse_event_t *mouse_event = (mouse_event_t *) buf;
-                double velocity;
-                AccelerationCurve curve;
-                switch (mouse_event->device_type) {
-                    case kDeviceTypeMouse:
-                        velocity = velocity_mouse;
-                        curve = curve_mouse;
-                        break;
-                    case kDeviceTypeTrackpad:
-                        velocity = velocity_trackpad;
-                        curve = curve_trackpad;
-                        break;
-                    default:
-                        velocity = 1;
-                        NSLog(@"INTERNAL ERROR: device type not mouse or trackpad");
-                }
-                mouse_handle(mouse_event, velocity, curve);
+                mhs = GET_TIME();
+                mouse_handle(mouse_event);
+                mhe = GET_TIME();
             } else {
-                NSLog(@"IODataQueueDequeue() failed");
+                LOG(@"IODataQueueDequeue() failed");
             }
+            end = GET_TIME();
+
+            LOG(@"outer: %f, total for handle event: %f, prepare,post,and release event: %f, post event: %f, (mouse_handle): %f, seqnum: %llu, numPackets: %d", outerend-outerstart, end-start, t2-t1, t4-t3, mhe-mhs, mouse_event->seqnum, numPackets);
         }
+
+        if (counter > 2) {
+            outernum += 1;
+            outersum += (outerend-outerstart);
+        }
+
+        outerstart = GET_TIME();
     }
 
 	free(buf);
@@ -455,7 +461,7 @@ void *HandleMouseEventThread(void *instance)
 
 void trap_signals(int sig)
 {
-    //NSLog(@"trapped signal: %d", sig);
+    NSLog(@"trapped signal: %d", sig);
     if (is_debug) {
         debug_end();
     }
@@ -467,12 +473,16 @@ int main(int argc, char **argv)
 {
 	NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
 
-    is_debug = 0;
-
-    if (argc > 1) {
-        if (strcmp(argv[1], "--debug") == 0) {
+    for(int i = 1; i < argc; i++) {
+        NSLog(@"arg: %s", argv[i]);
+        if (strcmp(argv[i], "--debug") == 0) {
             is_debug = 1;
             NSLog(@"Debug mode on");
+        }
+
+        if (strcmp(argv[i], "--perf") == 0) {
+            is_perf = 1;
+            NSLog(@"Performance mode on (logging to memory)");
         }
     }
 
