@@ -351,8 +351,8 @@ BOOL set_realtime_prio() {
     struct thread_time_constraint_policy ttcpolicy;
     // 500hz mouse = 2ms
     ttcpolicy.period        = (uint32_t) convert_from_nanos_to_mach_timebase(MS_TO_NANOS(2), &info);
-    ttcpolicy.computation   = (uint32_t) convert_from_nanos_to_mach_timebase(8000000, &info);
-    ttcpolicy.constraint    = (uint32_t) convert_from_nanos_to_mach_timebase(16000000, &info);
+    ttcpolicy.computation   = (uint32_t) convert_from_nanos_to_mach_timebase(30142, &info);
+    ttcpolicy.constraint    = (uint32_t) convert_from_nanos_to_mach_timebase(92539, &info);
     ttcpolicy.preemptible   = 1;
 
 #undef MS_TO_NANOS
