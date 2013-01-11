@@ -127,7 +127,7 @@ bool mouse_init() {
         CGEventSourceSetLocalEventsFilterDuringSuppressionState(eventSource, kCGEventFilterMaskPermitLocalMouseEvents, kCGEventSuppressionStateSuppressionInterval);
     }
 
-	deltaPosFloat = deltaPosInt = lastPos = get_current_mouse_pos();
+	deltaPosFloat = deltaPosInt = get_current_mouse_pos();
 
     if (!is_event) {
         if (CGSetLocalEventsFilterDuringSuppressionState(kCGEventFilterMaskPermitAllEvents,
@@ -344,14 +344,14 @@ static void mouse_handle_buttons(int buttons) {
 
 void mouse_handle(mouse_event_t *event) {
 
-    if (event->dx != 0 || event->dy != 0) {
-        if (event->seqnum != (lastSequenceNumber + 1)) {
-            if (is_debug) {
-                LOG(@"Cursor position dirty, need to fetch fresh");
-            }
-            currentPos = get_current_mouse_pos();
+    if (event->seqnum != (lastSequenceNumber + 1)) {
+        if (is_debug) {
+            LOG(@"Cursor position dirty, need to fetch fresh");
         }
+        currentPos = get_current_mouse_pos();
+    }
 
+    if (event->dx != 0 || event->dy != 0) {
         double velocity;
         AccelerationCurve curve;
         switch (event->device_type) {
