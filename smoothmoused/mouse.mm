@@ -369,8 +369,6 @@ void mouse_handle(mouse_event_t *event) {
                 exit(0);
         }
 
-        lastSequenceNumber = event->seqnum;
-
         mouse_handle_move(event->dx, event->dy, velocity, curve, event->buttons);
     }
 
@@ -394,6 +392,7 @@ void mouse_handle(mouse_event_t *event) {
         }
     }
 
+    lastSequenceNumber = event->seqnum;
     lastButtons = event->buttons;
     lastPos = currentPos;
 }
