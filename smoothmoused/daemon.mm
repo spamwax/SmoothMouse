@@ -21,6 +21,7 @@ BOOL is_memory = 0;
 BOOL is_timings = 0;
 BOOL is_dumping = 0;
 BOOL is_event = 0;
+BOOL is_iohid = 1;
 
 static BOOL mouse_enabled;
 static BOOL trackpad_enabled;
@@ -506,7 +507,14 @@ int main(int argc, char **argv)
             is_timings = 1;
             NSLog(@"Timing logging enabled");
         }
+
+        if (strcmp(argv[i], "--noiohid") == 0) {
+            is_iohid = 0;
+            NSLog(@"IOHID events disabled");
+        }
     }
+
+    NSLog(@"IOHID enabled: %d", is_iohid);
 
 	SmoothMouseDaemon *daemon = [[SmoothMouseDaemon alloc] init];
     if (daemon == NULL) {

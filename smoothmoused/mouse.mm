@@ -4,7 +4,7 @@
 
 #include <sys/time.h>
 #include <IOKit/hidsystem/event_status_driver.h>
-
+#include <IOKit/hidsystem/IOHIDShared.h>
 #include "WindowsFunction.hpp"
 
 #define LEFT_BUTTON     4
@@ -21,8 +21,12 @@
 
 WindowsFunction *win = NULL;
 
+mach_port_t io_master_port = MACH_PORT_NULL;
+io_connect_t gEventDriver = MACH_PORT_NULL;
+
 extern BOOL is_debug;
 extern BOOL is_event;
+extern BOOL is_iohid;
 
 extern double velocity_mouse;
 extern double velocity_trackpad;
@@ -118,7 +122,7 @@ bool mouse_init() {
     NXEventHandle handle = NXOpenEventStatus();
 	clickTime = NXClickTime(handle);
     NXCloseEventStatus(handle);
-    
+
     eventSource = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
     if (eventSource == NULL) {
         NSLog(@"call to CGEventSourceSetKeyboardType failed");
@@ -134,12 +138,26 @@ bool mouse_init() {
                                                          kCGEventSuppressionStateRemoteMouseDrag)) {
             NSLog(@"call to CGSetLocalEventsFilterDuringSuppressionState failed");
         }
-        
+
         if (CGSetLocalEventsSuppressionInterval(0.0)) {
             NSLog(@"call to CGSetLocalEventsSuppressionInterval failed");
         }
     }
 
+    if (is_iohid) {
+        kern_return_t   kr;
+        mach_port_t             ev, service;
+
+        if (KERN_SUCCESS == (kr = IOMasterPort(MACH_PORT_NULL, &io_master_port)) && io_master_port != MACH_PORT_NULL) {
+            if ((service = IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceMatching(kIOHIDSystemClass)))) {
+                kr = IOServiceOpen(service, mach_task_self(), kIOHIDParamConnectType, &ev);
+                IOObjectRelease(service);
+
+                if (KERN_SUCCESS == kr)
+                    gEventDriver = ev;
+            }
+        }
+    }
 	return YES;
 }
 
@@ -149,6 +167,13 @@ void mouse_cleanup() {
         win = NULL;
     }
     CFRelease(eventSource);
+
+    if (is_iohid) {
+        kern_return_t   r = KERN_SUCCESS;
+        if (gEventDriver != MACH_PORT_NULL)
+            r = IOServiceClose(gEventDriver);
+        gEventDriver = MACH_PORT_NULL;
+    }
 }
 
 static void mouse_handle_move(int dx, int dy, double velocity, AccelerationCurve curve, int currentButtons) {
@@ -218,31 +243,67 @@ static void mouse_handle_move(int dx, int dy, double velocity, AccelerationCurve
 
         if (is_debug) {
             LOG(@"move dx: %d, dy: %d, cur: %.2fx%.2f, delta: %.2fx%.2f, buttons(LMR456): %d%d%d%d%d%d, mouseType: %s(%d)",
-                  dx,
-                  dy,
-                  currentPos.x,
-                  currentPos.y,
-                  deltaPosInt.x,
-                  deltaPosInt.y,
-                  BUTTON_DOWN(currentButtons, LEFT_BUTTON),
-                  BUTTON_DOWN(currentButtons, MIDDLE_BUTTON),
-                  BUTTON_DOWN(currentButtons, RIGHT_BUTTON),
-                  BUTTON_DOWN(currentButtons, BUTTON4),
-                  BUTTON_DOWN(currentButtons, BUTTON5),
-                  BUTTON_DOWN(currentButtons, BUTTON6),
-                  event_type_to_string(mouseType),
-                  mouseType);
+                dx,
+                dy,
+                currentPos.x,
+                currentPos.y,
+                deltaPosInt.x,
+                deltaPosInt.y,
+                BUTTON_DOWN(currentButtons, LEFT_BUTTON),
+                BUTTON_DOWN(currentButtons, MIDDLE_BUTTON),
+                BUTTON_DOWN(currentButtons, RIGHT_BUTTON),
+                BUTTON_DOWN(currentButtons, BUTTON4),
+                BUTTON_DOWN(currentButtons, BUTTON5),
+                BUTTON_DOWN(currentButtons, BUTTON6),
+                event_type_to_string(mouseType),
+                mouseType);
         }
 
-        t1 = GET_TIME();
-        CGEventRef evt = CGEventCreateMouseEvent(eventSource, mouseType, newPos, otherButton);
-        CGEventSetIntegerValueField(evt, kCGMouseEventDeltaX, deltaX);
-        CGEventSetIntegerValueField(evt, kCGMouseEventDeltaY, deltaY);
-        t3 = GET_TIME();
-        CGEventPost(kCGSessionEventTap, evt);
-        t4 = GET_TIME();
-        CFRelease(evt);
-        t2 = GET_TIME();
+        if (!is_iohid) {
+            t1 = GET_TIME();
+            CGEventRef evt = CGEventCreateMouseEvent(eventSource, mouseType, newPos, otherButton);
+            CGEventSetIntegerValueField(evt, kCGMouseEventDeltaX, deltaX);
+            CGEventSetIntegerValueField(evt, kCGMouseEventDeltaY, deltaY);
+            t3 = GET_TIME();
+            CGEventPost(kCGSessionEventTap, evt);
+            t4 = GET_TIME();
+            CFRelease(evt);
+            t2 = GET_TIME();
+        } else { // iohid
+            int eventType;
+
+            t1 = GET_TIME();
+
+            switch (mouseType) {
+                case kCGEventMouseMoved:
+                    eventType = NX_MOUSEMOVED;
+                    break;
+                case kCGEventLeftMouseDragged:
+                    eventType = NX_LMOUSEDRAGGED;
+                    break;
+                case kCGEventRightMouseDragged:
+                    eventType = NX_RMOUSEDRAGGED;
+                    break;
+            }
+
+            static NXEventData eventData;
+            memset(&eventData, 0, sizeof(NXEventData));
+
+            IOGPoint newPoint = { (SInt16) newPos.x, (SInt16) newPos.y };
+
+            eventData.mouseMove.dx = (SInt32)(calcdx);
+            eventData.mouseMove.dy = (SInt32)(calcdy);
+
+            t3 = GET_TIME();
+            (void)IOHIDPostEvent(gEventDriver,
+                                 eventType,
+                                 newPoint,
+                                 &eventData,
+                                 kNXEventDataVersion,
+                                 0,
+                                 kIOHIDSetCursorPosition);
+            t2 = t4 = GET_TIME();
+        }
     }
 
     currentPos = newPos;
@@ -313,28 +374,71 @@ static void mouse_handle_buttons(int buttons) {
 
                 if (is_debug) {
                     LOG(@"buttons(LMR456): %d%d%d%d%d%d, mouseType: %s(%d), otherButton: %d, buttonIndex(654LMR): %d, nclicks: %d, csv: %d",
-                          BUTTON_DOWN(buttons, LEFT_BUTTON),
-                          BUTTON_DOWN(buttons, MIDDLE_BUTTON),
-                          BUTTON_DOWN(buttons, RIGHT_BUTTON),
-                          BUTTON_DOWN(buttons, BUTTON4),
-                          BUTTON_DOWN(buttons, BUTTON5),
-                          BUTTON_DOWN(buttons, BUTTON6),
-                          event_type_to_string(mouseType),
-                          mouseType,
-                          otherButton,
-                          ((int)log2(buttonIndex)),
-                          nclicks,
-                          clickStateValue);
+                        BUTTON_DOWN(buttons, LEFT_BUTTON),
+                        BUTTON_DOWN(buttons, MIDDLE_BUTTON),
+                        BUTTON_DOWN(buttons, RIGHT_BUTTON),
+                        BUTTON_DOWN(buttons, BUTTON4),
+                        BUTTON_DOWN(buttons, BUTTON5),
+                        BUTTON_DOWN(buttons, BUTTON6),
+                        event_type_to_string(mouseType),
+                        mouseType,
+                        otherButton,
+                        ((int)log2(buttonIndex)),
+                        nclicks,
+                        clickStateValue);
                 }
 
-                t1 = GET_TIME();
-                CGEventRef evt = CGEventCreateMouseEvent(eventSource, mouseType, currentPos, otherButton);
-                CGEventSetIntegerValueField(evt, kCGMouseEventClickState, clickStateValue);
-                t3 = GET_TIME();
-                CGEventPost(kCGSessionEventTap, evt);
-                t4 = GET_TIME();
-                CFRelease(evt);
-                t2 = GET_TIME();
+                if (!is_iohid) {
+                    t1 = GET_TIME();
+                    CGEventRef evt = CGEventCreateMouseEvent(eventSource, mouseType, currentPos, otherButton);
+                    CGEventSetIntegerValueField(evt, kCGMouseEventClickState, clickStateValue);
+                    t3 = GET_TIME();
+                    CGEventPost(kCGSessionEventTap, evt);
+                    t4 = GET_TIME();
+                    CFRelease(evt);
+                    t2 = GET_TIME();
+                } else {
+                    int eventType;
+
+                    t1 = GET_TIME();
+                    switch(mouseType) {
+                        case kCGEventLeftMouseDown:
+                            eventType = NX_LMOUSEDOWN;
+                            break;
+                        case kCGEventLeftMouseUp:
+                            eventType = NX_LMOUSEUP;
+                            break;
+                        case kCGEventRightMouseDown:
+                            eventType = NX_RMOUSEDOWN;
+                            break;
+                        case kCGEventRightMouseUp:
+                            eventType = NX_RMOUSEUP;
+                            break;
+                        case kCGEventOtherMouseDown:
+                            break;
+                        case kCGEventOtherMouseUp:
+                            break;
+                        default:
+                            break;
+                    }
+
+                    static NXEventData eventData;
+                    memset(&eventData, 0, sizeof(NXEventData));
+
+                    eventData.mouse.subType = NX_SUBTYPE_DEFAULT;
+
+                    IOGPoint newPoint = { (SInt16) currentPos.x, (SInt16) currentPos.y };
+
+                    t3 = GET_TIME();
+                    IOHIDPostEvent(gEventDriver,
+                                   eventType,
+                                   newPoint,
+                                   &eventData,
+                                   kNXEventDataVersion,
+                                   0,
+                                   kIOHIDSetCursorPosition);
+                    t2 = t4 = GET_TIME();
+                }
             }
         }
     }
@@ -391,7 +495,7 @@ void mouse_handle(mouse_event_t *event) {
             debug_log_old(event, currentPos, currentPos.x - lastPos.x, currentPos.y - lastPos.y);
         }
     }
-
+    
     lastSequenceNumber = event->seqnum;
     lastButtons = event->buttons;
     lastPos = currentPos;
