@@ -436,7 +436,8 @@ static void mouse_handle_buttons(int buttons) {
                                    &eventData,
                                    kNXEventDataVersion,
                                    0,
-                                   kIOHIDSetCursorPosition);
+                                   0);
+
                     t2 = t4 = GET_TIME();
                 }
             }
