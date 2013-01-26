@@ -217,26 +217,26 @@ static void mouse_handle_move(int dx, int dy, double velocity, AccelerationCurve
 
     newPos = restrict_to_screen_boundaries(currentPos, newPos);
 
-    CGEventType mouseType = kCGEventMouseMoved;
+    CGEventType eventType = kCGEventMouseMoved;
     CGMouseButton otherButton = 0;
 
     if (BUTTON_DOWN(currentButtons, LEFT_BUTTON)) {
-        mouseType = kCGEventLeftMouseDragged;
+        eventType = kCGEventLeftMouseDragged;
         otherButton = kCGMouseButtonLeft;
     } else if (BUTTON_DOWN(currentButtons, RIGHT_BUTTON)) {
-        mouseType = kCGEventRightMouseDragged;
+        eventType = kCGEventRightMouseDragged;
         otherButton = kCGMouseButtonRight;
     } else if (BUTTON_DOWN(currentButtons, MIDDLE_BUTTON)) {
-        mouseType = kCGEventOtherMouseDragged;
+        eventType = kCGEventOtherMouseDragged;
         otherButton = kCGMouseButtonCenter;
     } else if (BUTTON_DOWN(currentButtons, BUTTON4)) {
-        mouseType = kCGEventOtherMouseDragged;
+        eventType = kCGEventOtherMouseDragged;
         otherButton = 3;
     } else if (BUTTON_DOWN(currentButtons, BUTTON5)) {
-        mouseType = kCGEventOtherMouseDragged;
+        eventType = kCGEventOtherMouseDragged;
         otherButton = 4;
     } else if (BUTTON_DOWN(currentButtons, BUTTON6)) {
-        mouseType = kCGEventOtherMouseDragged;
+        eventType = kCGEventOtherMouseDragged;
         otherButton = 5;
     }
 
@@ -248,7 +248,7 @@ static void mouse_handle_move(int dx, int dy, double velocity, AccelerationCurve
     deltaPosInt.y += deltaY;
 
     if (is_debug) {
-        LOG(@"move dx: %d, dy: %d, cur: %.2fx%.2f, delta: %.2fx%.2f, buttons(LMR456): %d%d%d%d%d%d, mouseType: %s(%d)",
+        LOG(@"move dx: %d, dy: %d, cur: %.2fx%.2f, delta: %.2fx%.2f, buttons(LMR456): %d%d%d%d%d%d, eventType: %s(%d), otherButton: %d",
             dx,
             dy,
             currentPos.x,
@@ -261,8 +261,9 @@ static void mouse_handle_move(int dx, int dy, double velocity, AccelerationCurve
             BUTTON_DOWN(currentButtons, BUTTON4),
             BUTTON_DOWN(currentButtons, BUTTON5),
             BUTTON_DOWN(currentButtons, BUTTON6),
-            event_type_to_string(mouseType),
-            mouseType);
+            event_type_to_string(eventType),
+            eventType,
+            otherButton);
     }
 
     switch (driver) {
@@ -279,7 +280,7 @@ static void mouse_handle_move(int dx, int dy, double velocity, AccelerationCurve
         case DRIVER_QUARTZ:
         {
             t1 = GET_TIME();
-            CGEventRef evt = CGEventCreateMouseEvent(eventSource, mouseType, newPos, otherButton);
+            CGEventRef evt = CGEventCreateMouseEvent(eventSource, eventType, newPos, otherButton);
             CGEventSetIntegerValueField(evt, kCGMouseEventDeltaX, deltaX);
             CGEventSetIntegerValueField(evt, kCGMouseEventDeltaY, deltaY);
             t3 = GET_TIME();
@@ -295,7 +296,7 @@ static void mouse_handle_move(int dx, int dy, double velocity, AccelerationCurve
 
             t1 = GET_TIME();
 
-            switch (mouseType) {
+            switch (eventType) {
                 case kCGEventMouseMoved:
                     iohidEventType = NX_MOUSEMOVED;
                     break;
@@ -305,6 +306,12 @@ static void mouse_handle_move(int dx, int dy, double velocity, AccelerationCurve
                 case kCGEventRightMouseDragged:
                     iohidEventType = NX_RMOUSEDRAGGED;
                     break;
+                case kCGEventOtherMouseDragged:
+                    iohidEventType = NX_OMOUSEDRAGGED;
+                    break;
+                default:
+                    NSLog(@"INTERNAL ERROR: unknown eventType: %d", eventType);
+                    exit(0);
             }
 
             static NXEventData eventData;
@@ -338,22 +345,22 @@ static void mouse_handle_move(int dx, int dy, double velocity, AccelerationCurve
 
 static void mouse_handle_buttons(int buttons) {
 
-    CGEventType mouseType = kCGEventNull;
+    CGEventType eventType = kCGEventNull;
 
     for(int i = 0; i < NUM_BUTTONS; i++) {
         int buttonIndex = (1 << i);
         if (BUTTON_STATE_CHANGED(buttons, lastButtons, buttonIndex)) {
             if (BUTTON_DOWN(buttons, buttonIndex)) {
                 switch(buttonIndex) {
-                    case LEFT_BUTTON:   mouseType = kCGEventLeftMouseDown; break;
-                    case RIGHT_BUTTON:  mouseType = kCGEventRightMouseDown; break;
-                    default:            mouseType = kCGEventOtherMouseDown; break;
+                    case LEFT_BUTTON:   eventType = kCGEventLeftMouseDown; break;
+                    case RIGHT_BUTTON:  eventType = kCGEventRightMouseDown; break;
+                    default:            eventType = kCGEventOtherMouseDown; break;
                 }
             } else {
                 switch(buttonIndex) {
-                    case LEFT_BUTTON:   mouseType = kCGEventLeftMouseUp; break;
-                    case RIGHT_BUTTON:  mouseType = kCGEventRightMouseUp; break;
-                    default:            mouseType = kCGEventOtherMouseUp; break;
+                    case LEFT_BUTTON:   eventType = kCGEventLeftMouseUp; break;
+                    case RIGHT_BUTTON:  eventType = kCGEventRightMouseUp; break;
+                    default:            eventType = kCGEventOtherMouseUp; break;
                 }
             }
 
@@ -367,7 +374,7 @@ static void mouse_handle_buttons(int buttons) {
                 case BUTTON6: otherButton = 5; break;
             }
 
-            if (mouseType == kCGEventLeftMouseDown) {
+            if (eventType == kCGEventLeftMouseDown) {
                 CGFloat maxDistanceAllowed = sqrt(2) + 0.0001;
                 CGFloat distanceMovedSinceLastClick = get_distance(lastClickPos, currentPos);
                 double now = timestamp();
@@ -383,7 +390,7 @@ static void mouse_handle_buttons(int buttons) {
             }
 
             int clickStateValue;
-            switch(mouseType) {
+            switch(eventType) {
                 case kCGEventLeftMouseDown:
                 case kCGEventLeftMouseUp:
                     clickStateValue = nclicks;
@@ -400,15 +407,15 @@ static void mouse_handle_buttons(int buttons) {
             }
 
             if (is_debug) {
-                LOG(@"buttons(LMR456): %d%d%d%d%d%d, mouseType: %s(%d), otherButton: %d, buttonIndex(654LMR): %d, nclicks: %d, csv: %d",
+                LOG(@"buttons(LMR456): %d%d%d%d%d%d, eventType: %s(%d), otherButton: %d, buttonIndex(654LMR): %d, nclicks: %d, csv: %d",
                     BUTTON_DOWN(buttons, LEFT_BUTTON),
                     BUTTON_DOWN(buttons, MIDDLE_BUTTON),
                     BUTTON_DOWN(buttons, RIGHT_BUTTON),
                     BUTTON_DOWN(buttons, BUTTON4),
                     BUTTON_DOWN(buttons, BUTTON5),
                     BUTTON_DOWN(buttons, BUTTON6),
-                    event_type_to_string(mouseType),
-                    mouseType,
+                    event_type_to_string(eventType),
+                    eventType,
                     otherButton,
                     ((int)log2(buttonIndex)),
                     nclicks,
@@ -429,7 +436,7 @@ static void mouse_handle_buttons(int buttons) {
                 case DRIVER_QUARTZ:
                 {
                     t1 = GET_TIME();
-                    CGEventRef evt = CGEventCreateMouseEvent(eventSource, mouseType, currentPos, otherButton);
+                    CGEventRef evt = CGEventCreateMouseEvent(eventSource, eventType, currentPos, otherButton);
                     CGEventSetIntegerValueField(evt, kCGMouseEventClickState, clickStateValue);
                     t3 = GET_TIME();
                     CGEventPost(kCGSessionEventTap, evt);
@@ -441,10 +448,9 @@ static void mouse_handle_buttons(int buttons) {
                 case DRIVER_IOHID:
                 {
                     int iohidEventType;
-                    int iohidOtherButton = 0;
 
                     t1 = GET_TIME();
-                    switch(mouseType) {
+                    switch(eventType) {
                         case kCGEventLeftMouseDown:
                             iohidEventType = NX_LMOUSEDOWN;
                             break;
@@ -464,27 +470,8 @@ static void mouse_handle_buttons(int buttons) {
                             iohidEventType = NX_OMOUSEUP;
                             break;
                         default:
-                            NSLog(@"Internal Error: unknown mouseType: %d", mouseType);
-                            break;
-                    }
-
-#if 0
-                    static int x = -1;
-                    if (iohidEventType == NX_OMOUSEDOWN) {
-                        x++;
-                    }
-                    if (x > 10) {
-                        x = 0;
-                    }
-#endif
-                    
-                    switch(otherButton) {
-                        case 2:
-                            iohidOtherButton = 2;
-                            break;
-                        default:
-                            iohidOtherButton = otherButton;
-                            break;
+                            NSLog(@"INTERNAL ERROR: unknown eventType: %d", eventType);
+                            exit(0);
                     }
 
                     static NXEventData eventData;
@@ -492,7 +479,7 @@ static void mouse_handle_buttons(int buttons) {
 
                     eventData.mouse.subType = NX_SUBTYPE_DEFAULT;
                     eventData.mouse.click = clickStateValue;
-                    eventData.mouse.buttonNumber = iohidOtherButton;
+                    eventData.mouse.buttonNumber = otherButton;
 
                     if (is_debug) {
                         NSLog(@"eventType: %d, subt: %d, click: %d, buttonNumber: %d",
@@ -512,7 +499,7 @@ static void mouse_handle_buttons(int buttons) {
                                    kNXEventDataVersion,
                                    0,
                                    0);
-                    
+
                     t2 = t4 = GET_TIME();
                     break;
                 }
