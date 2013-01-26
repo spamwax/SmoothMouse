@@ -263,6 +263,7 @@ cleanup:
                           [NSNumber numberWithBool:SETTINGS_TRACKPAD_ENABLED_DEFAULT], SETTINGS_TRACKPAD_ENABLED,
                           SETTINGS_MOUSE_ACCELERATION_CURVE_DEFAULT, SETTINGS_MOUSE_ACCELERATION_CURVE,
                           SETTINGS_TRACKPAD_ACCELERATION_CURVE_DEFAULT, SETTINGS_TRACKPAD_ACCELERATION_CURVE,
+                          [NSNumber numberWithInt:SETTINGS_DRIVER_DEFAULT], SETTINGS_DRIVER,
                           nil];
 
     NSString *file = [NSHomeDirectory() stringByAppendingPathComponent: PREFERENCES_FILENAME];

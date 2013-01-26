@@ -20,8 +20,6 @@ BOOL is_debug = 0;
 BOOL is_memory = 0;
 BOOL is_timings = 0;
 BOOL is_dumping = 0;
-BOOL is_event = 0;
-BOOL is_iohid = 1;
 
 static BOOL mouse_enabled;
 static BOOL trackpad_enabled;
@@ -29,6 +27,7 @@ double velocity_mouse;
 double velocity_trackpad;
 AccelerationCurve curve_mouse;
 AccelerationCurve curve_trackpad;
+Driver driver;
 
 double start, end, t1, t2, t3, t4, mhs, mhe, outerstart, outerend, outersum = 0, outernum = 0;
 NSMutableArray* logs = [[NSMutableArray alloc] init];
@@ -142,11 +141,11 @@ NSMutableArray* logs = [[NSMutableArray alloc] init];
 		velocity_trackpad = 1.0;
 	}
 
-    value = [dict valueForKey:SETTINGS_EVENT_ENABLED];
+    value = [dict valueForKey:SETTINGS_DRIVER];
 	if (value) {
-		is_event = [value boolValue];
+		driver = (Driver) [value intValue];
 	} else {
-		is_event = 1;
+		driver = (Driver) SETTINGS_DRIVER_DEFAULT;
 	}
 
     curve_mouse = [self getAccelerationCurveFromDict:dict withKey:SETTINGS_MOUSE_ACCELERATION_CURVE];
@@ -249,8 +248,8 @@ error:
         configuration |= 1 << 1;
     }
 
-    if (!is_event) {
-        configuration |= 1 << 2;
+    if (driver == DRIVER_QUARTZ_OLD) {
+        configuration |= 1 << 2; // set compatibility mode in kernel
     }
 
     scalarI_64[0] = configuration;
@@ -370,8 +369,8 @@ BOOL set_realtime_prio() {
     thread_port_t thread_port = pthread_mach_thread_np(pthread_self());
 
     kret = thread_policy_set(thread_port,
-                            THREAD_TIME_CONSTRAINT_POLICY, (thread_policy_t) &ttcpolicy,
-                            THREAD_TIME_CONSTRAINT_POLICY_COUNT);
+                             THREAD_TIME_CONSTRAINT_POLICY, (thread_policy_t) &ttcpolicy,
+                             THREAD_TIME_CONSTRAINT_POLICY_COUNT);
 
     if (kret != KERN_SUCCESS) {
         NSLog(@"call to thread_policy_set failed: %d", kret);
@@ -488,6 +487,15 @@ void trap_signals(int sig)
     exit(-1);
 }
 
+const char *get_driver_string(int mouse_driver) {
+    switch (mouse_driver) {
+        case DRIVER_QUARTZ_OLD: return "QUARTZ_OLD";
+        case DRIVER_QUARTZ: return "QUARTZ";
+        case DRIVER_IOHID: return "IOHID";
+        default: return "?";
+    }
+}
+
 int main(int argc, char **argv)
 {
 	NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
@@ -507,14 +515,7 @@ int main(int argc, char **argv)
             is_timings = 1;
             NSLog(@"Timing logging enabled");
         }
-
-        if (strcmp(argv[i], "--noiohid") == 0) {
-            is_iohid = 0;
-            NSLog(@"IOHID events disabled");
-        }
     }
-
-    NSLog(@"IOHID enabled: %d", is_iohid);
 
 	SmoothMouseDaemon *daemon = [[SmoothMouseDaemon alloc] init];
     if (daemon == NULL) {
@@ -536,17 +537,16 @@ int main(int argc, char **argv)
           mouse_enabled,
           velocity_mouse,
           curve_mouse);
-
+    
     NSLog(@"Trackpad enabled: %d Trackpad velocity: %f Trackpad curve: %d",
           trackpad_enabled,
           velocity_trackpad,
           curve_trackpad);
-
-    NSLog(@"Event system enabled: %d",
-          is_event);
-
+    
+    NSLog(@"Driver: %s (%d)", get_driver_string(driver), driver);
+    
 	[daemon mainLoop];
-
+    
 	[daemon release];
 	
 	[pool release];

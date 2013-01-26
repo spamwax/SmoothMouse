@@ -14,6 +14,5 @@ extern NSMutableArray* logs;
 #define GET_TIME() (mach_absolute_time() / 1000.0);
 #define LOG(format, ...) if (!is_dumping) { if(is_memory) {[logs addObject: [NSString stringWithFormat:format, ##__VA_ARGS__]];} else {NSLog(format, ##__VA_ARGS__); } }
 
-void debug_log_old(mouse_event_t *event, CGPoint currentPos, float calcx, float calcy);
 void debug_register_event(mouse_event_t *event);
 void debug_end();
