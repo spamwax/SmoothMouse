@@ -312,8 +312,8 @@ static void mouse_handle_move(int dx, int dy, double velocity, AccelerationCurve
 
             IOGPoint newPoint = { (SInt16) newPos.x, (SInt16) newPos.y };
 
-            eventData.mouseMove.dx = (SInt32)(calcdx);
-            eventData.mouseMove.dy = (SInt32)(calcdy);
+            eventData.mouseMove.dx = (SInt32)(deltaX);
+            eventData.mouseMove.dy = (SInt32)(deltaY);
 
             t3 = GET_TIME();
             (void)IOHIDPostEvent(gEventDriver,
