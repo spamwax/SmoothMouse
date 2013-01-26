@@ -449,6 +449,8 @@ static void mouse_handle_buttons(int buttons) {
                 {
                     int iohidEventType;
 
+                    int use_quartz = 0;
+                    
                     t1 = GET_TIME();
                     switch(eventType) {
                         case kCGEventLeftMouseDown:
@@ -464,9 +466,11 @@ static void mouse_handle_buttons(int buttons) {
                             iohidEventType = NX_RMOUSEUP;
                             break;
                         case kCGEventOtherMouseDown:
+                            use_quartz = 1;
                             iohidEventType = NX_OMOUSEDOWN;
                             break;
                         case kCGEventOtherMouseUp:
+                            use_quartz = 1;
                             iohidEventType = NX_OMOUSEUP;
                             break;
                         default:
@@ -474,33 +478,45 @@ static void mouse_handle_buttons(int buttons) {
                             exit(0);
                     }
 
-                    static NXEventData eventData;
-                    memset(&eventData, 0, sizeof(NXEventData));
+                    if (!use_quartz) {
+                        static NXEventData eventData;
+                        memset(&eventData, 0, sizeof(NXEventData));
 
-                    eventData.mouse.subType = NX_SUBTYPE_DEFAULT;
-                    eventData.mouse.click = clickStateValue;
-                    eventData.mouse.buttonNumber = otherButton;
+                        eventData.mouse.subType = NX_SUBTYPE_DEFAULT;
+                        eventData.mouse.click = clickStateValue;
+                        eventData.mouse.buttonNumber = otherButton;
 
-                    if (is_debug) {
-                        NSLog(@"eventType: %d, subt: %d, click: %d, buttonNumber: %d",
-                              iohidEventType,
-                              eventData.mouse.subType,
-                              eventData.mouse.click,
-                              eventData.mouse.buttonNumber);
+                        if (is_debug) {
+                            NSLog(@"eventType: %d, subt: %d, click: %d, buttonNumber: %d",
+                                  iohidEventType,
+                                  eventData.mouse.subType,
+                                  eventData.mouse.click,
+                                  eventData.mouse.buttonNumber);
+                        }
+
+                        IOGPoint newPoint = { (SInt16) currentPos.x, (SInt16) currentPos.y };
+
+                        t3 = GET_TIME();
+                        IOHIDPostEvent(gEventDriver,
+                                       iohidEventType,
+                                       newPoint,
+                                       &eventData,
+                                       kNXEventDataVersion,
+                                       0,
+                                       0);
+                        
+                        t2 = t4 = GET_TIME();
+                    } else {
+                        t1 = GET_TIME();
+                        CGEventRef evt = CGEventCreateMouseEvent(eventSource, eventType, currentPos, otherButton);
+                        CGEventSetIntegerValueField(evt, kCGMouseEventClickState, clickStateValue);
+                        t3 = GET_TIME();
+                        CGEventPost(kCGSessionEventTap, evt);
+                        t4 = GET_TIME();
+                        CFRelease(evt);
+                        t2 = GET_TIME();
+                        break;
                     }
-
-                    IOGPoint newPoint = { (SInt16) currentPos.x, (SInt16) currentPos.y };
-
-                    t3 = GET_TIME();
-                    IOHIDPostEvent(gEventDriver,
-                                   iohidEventType,
-                                   newPoint,
-                                   &eventData,
-                                   kNXEventDataVersion,
-                                   0,
-                                   0);
-
-                    t2 = t4 = GET_TIME();
                     break;
                 }
                 default:
