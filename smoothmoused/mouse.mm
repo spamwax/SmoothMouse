@@ -499,6 +499,8 @@ static void mouse_handle_buttons(int buttons) {
 
             int driver_to_use = driver;
 
+            // can't get middle mouse to work in iohid, so let's channel all "other" events
+            // through quartz
             if (driver == DRIVER_IOHID &&
                 (eventType == kCGEventOtherMouseDown || eventType == kCGEventOtherMouseUp)) {
                 driver_to_use = DRIVER_QUARTZ;
@@ -525,7 +527,6 @@ static void mouse_handle_buttons(int buttons) {
                 case DRIVER_IOHID:
                 {
                     int iohidEventType;
-                    UInt8 subType = NX_SUBTYPE_TABLET_POINT;
 
                     switch(eventType) {
                         case kCGEventLeftMouseDown:
@@ -542,11 +543,9 @@ static void mouse_handle_buttons(int buttons) {
                             break;
                         case kCGEventOtherMouseDown:
                             iohidEventType = NX_OMOUSEDOWN;
-                            subType = NX_SUBTYPE_DEFAULT;
                             break;
                         case kCGEventOtherMouseUp:
                             iohidEventType = NX_OMOUSEUP;
-                            subType = NX_SUBTYPE_DEFAULT;
                             break;
                         default:
                             NSLog(@"INTERNAL ERROR: unknown eventType: %d", eventType);

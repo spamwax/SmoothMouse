@@ -92,10 +92,10 @@ NSMutableArray* logs = [[NSMutableArray alloc] init];
     NSString *value;
     value = [dictionary valueForKey:key];
 	if (value) {
-        if ([value compare:@"Like in Windows"] == NSOrderedSame) {
+        if ([value compare:@"Windows"] == NSOrderedSame) {
             return ACCELERATION_CURVE_WINDOWS;
         }
-        if ([value compare:@"Like in OS X"] == NSOrderedSame) {
+        if ([value compare:@"OS X"] == NSOrderedSame) {
             return ACCELERATION_CURVE_OSX;
         }
 	}
