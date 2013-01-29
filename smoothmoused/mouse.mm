@@ -44,8 +44,10 @@ static int lastButtons = 0;
 static int nclicks = 0;
 static CGPoint lastClickPos;
 static double lastClickTime = 0;
-static double clickTime;
+static double doubleClickSpeed;
 static uint64_t lastSequenceNumber = 0;
+
+static pthread_mutex_t clickCountMutex = PTHREAD_MUTEX_INITIALIZER;
 
 static double timestamp()
 {
@@ -121,12 +123,11 @@ static CGPoint get_current_mouse_pos() {
 }
 
 void mouse_update_clicktime() {
-    static pthread_mutex_t count_mutex = PTHREAD_MUTEX_INITIALIZER;
-    pthread_mutex_lock( &count_mutex );
+    pthread_mutex_lock(&clickCountMutex);
     NXEventHandle handle = NXOpenEventStatus();
-	clickTime = NXClickTime(handle);
+	doubleClickSpeed = NXClickTime(handle);
     NXCloseEventStatus(handle);
-    pthread_mutex_unlock( &count_mutex );
+    pthread_mutex_unlock(&clickCountMutex);
     //NSLog(@"clicktime updated: %f", clickTime);
 }
 
@@ -386,6 +387,7 @@ static void mouse_handle_move(int deviceType, int dx, int dy, double velocity, A
 
             IOGPoint newPoint = { (SInt16) newPos.x, (SInt16) newPos.y };
 
+            eventData.mouseMove.subType = NX_SUBTYPE_TABLET_POINT;
             eventData.mouseMove.dx = (SInt32)(deltaX);
             eventData.mouseMove.dy = (SInt32)(deltaY);
 
@@ -445,7 +447,13 @@ static void mouse_handle_buttons(int buttons) {
                 CGFloat maxDistanceAllowed = sqrt(2) + 0.0001;
                 CGFloat distanceMovedSinceLastClick = get_distance(lastClickPos, currentPos);
                 double now = timestamp();
-                if (now - lastClickTime <= clickTime &&
+
+                int theDoubleClickSpeed;
+                pthread_mutex_lock(&clickCountMutex);
+                theDoubleClickSpeed = doubleClickSpeed;
+                pthread_mutex_unlock(&clickCountMutex);
+
+                if (now - lastClickTime <= doubleClickSpeed &&
                     distanceMovedSinceLastClick <= maxDistanceAllowed) {
                     lastClickTime = timestamp();
                     nclicks++;
@@ -517,6 +525,7 @@ static void mouse_handle_buttons(int buttons) {
                 case DRIVER_IOHID:
                 {
                     int iohidEventType;
+                    UInt8 subType = NX_SUBTYPE_TABLET_POINT;
 
                     switch(eventType) {
                         case kCGEventLeftMouseDown:
@@ -533,9 +542,11 @@ static void mouse_handle_buttons(int buttons) {
                             break;
                         case kCGEventOtherMouseDown:
                             iohidEventType = NX_OMOUSEDOWN;
+                            subType = NX_SUBTYPE_DEFAULT;
                             break;
                         case kCGEventOtherMouseUp:
                             iohidEventType = NX_OMOUSEUP;
+                            subType = NX_SUBTYPE_DEFAULT;
                             break;
                         default:
                             NSLog(@"INTERNAL ERROR: unknown eventType: %d", eventType);
@@ -545,7 +556,7 @@ static void mouse_handle_buttons(int buttons) {
                     static NXEventData eventData;
                     memset(&eventData, 0, sizeof(NXEventData));
 
-                    eventData.mouse.subType = NX_SUBTYPE_DEFAULT;
+                    eventData.mouse.subType = NX_SUBTYPE_TABLET_POINT;
                     eventData.mouse.click = clickStateValue;
                     eventData.mouse.buttonNumber = otherButton;
 
@@ -589,6 +600,7 @@ void mouse_handle(mouse_event_t *event) {
         if (is_debug) {
             LOG(@"Cursor position dirty, need to fetch fresh");
         }
+
         currentPos = get_current_mouse_pos();
     }
 
