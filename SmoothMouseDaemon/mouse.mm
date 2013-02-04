@@ -122,6 +122,8 @@ static CGPoint get_current_mouse_pos() {
     CGPoint currentPos = CGEventGetLocation(event);
     CFRelease(event);
     //NSLog(@"got cursor position: %f,%f", currentPos.x, currentPos.y);
+    currentPos.x = (int)currentPos.x;
+    currentPos.y = (int)currentPos.y;
     return currentPos;
 }
 
@@ -292,8 +294,15 @@ static void mouse_handle_move(int deviceType, int dx, int dy, double velocity, A
         calcdy = (velocity * dy);
     }
 
-    newPos.x = currentPos.x + calcdx;
-    newPos.y = currentPos.y + calcdy;
+    deltaPosFloat.x += calcdx;
+    deltaPosFloat.y += calcdy;
+    int deltaX = (int) (deltaPosFloat.x - deltaPosInt.x);
+    int deltaY = (int) (deltaPosFloat.y - deltaPosInt.y);
+    deltaPosInt.x += deltaX;
+    deltaPosInt.y += deltaY;
+
+    newPos.x = currentPos.x + deltaX;
+    newPos.y = currentPos.y + deltaY;
 
     newPos = restrict_to_screen_boundaries(currentPos, newPos);
 
@@ -320,23 +329,16 @@ static void mouse_handle_move(int deviceType, int dx, int dy, double velocity, A
         otherButton = 5;
     }
 
-    deltaPosFloat.x += calcdx;
-    deltaPosFloat.y += calcdy;
-    int deltaX = (int) (deltaPosFloat.x - deltaPosInt.x);
-    int deltaY = (int) (deltaPosFloat.y - deltaPosInt.y);
-    deltaPosInt.x += deltaX;
-    deltaPosInt.y += deltaY;
-
     if (is_debug) {
-        LOG(@"move dx: %02d, dy: %02d, new pos: %.2fx%.2f, delta: %02d,%02d, deltaPos: %.2fx%.2f, buttons(LMR456): %d%d%d%d%d%d, eventType: %s(%d), otherButton: %d",
+        LOG(@"move dx: %02d, dy: %02d, new pos: %03dx%03d, delta: %02d,%02d, deltaPos: %03dx%03df, buttons(LMR456): %d%d%d%d%d%d, eventType: %s(%d), otherButton: %d",
             dx,
             dy,
-            newPos.x,
-            newPos.y,
+            (int)newPos.x,
+            (int)newPos.y,
             deltaX,
             deltaY,
-            deltaPosInt.x,
-            deltaPosInt.y,
+            (int)deltaPosInt.x,
+            (int)deltaPosInt.y,
             BUTTON_DOWN(currentButtons, LEFT_BUTTON),
             BUTTON_DOWN(currentButtons, MIDDLE_BUTTON),
             BUTTON_DOWN(currentButtons, RIGHT_BUTTON),
@@ -402,7 +404,7 @@ static void mouse_handle_move(int deviceType, int dx, int dy, double velocity, A
 
             IOGPoint newPoint = { (SInt16) newPos.x, (SInt16) newPos.y };
 
-            eventData.mouseMove.subType = NX_SUBTYPE_DEFAULT; //NX_SUBTYPE_TABLET_POINT;
+            eventData.mouseMove.subType = NX_SUBTYPE_TABLET_POINT;
             eventData.mouseMove.dx = (SInt32)(deltaX);
             eventData.mouseMove.dy = (SInt32)(deltaY);
 
@@ -615,7 +617,16 @@ void mouse_handle(mouse_event_t *event) {
             LOG(@"Cursor position dirty, need to fetch fresh");
         }
 
+        CGPoint oldPos = currentPos;
         currentPos = get_current_mouse_pos();
+
+        float movedX = oldPos.x - currentPos.x;
+        float movedY = oldPos.y - currentPos.y;
+
+        deltaPosFloat.x += movedX;
+        deltaPosFloat.y += movedY;
+        deltaPosInt.x += movedX;
+        deltaPosInt.y += movedY;
 
         needs_refresh = 0;
     }
